@@ -1,0 +1,7 @@
+{
+  "name": "Oxy Osbourne's Surgical Console",
+  "description": "A high-fidelity surgical-themed chatbot interface featuring the eccentric Dr. Oxy Osbourne. Includes vintage mixer-style controls and real-time voice interaction.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
