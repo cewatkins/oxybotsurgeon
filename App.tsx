@@ -22,7 +22,12 @@ import {
   Search,
   Zap,
   FlaskConical,
-  ExternalLink
+  ExternalLink,
+  ClipboardList,
+  Stethoscope,
+  RefreshCcw,
+  ShieldCheck,
+  FileText
 } from 'lucide-react';
 import VitalsMonitor from './components/VitalsMonitor';
 import ControlKnob from './components/ControlKnob';
@@ -44,8 +49,6 @@ const App: React.FC = () => {
   const [vitals, setVitals] = useState<VitalsData[]>([]);
   const [activeCase, setActiveCase] = useState<VideoMetaData | null>(null);
   const [showFullTranscription, setShowFullTranscription] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState(VOICE_OPTIONS[0].id);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLog, setSyncLog] = useState('');
@@ -81,15 +84,58 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [knobValues.sedation]);
 
-  const fetchRealMetadata = async (query: string) => {
+  const syncLatestChannelContent = async () => {
     setIsSyncing(true);
-    setSyncLog(`INITIALIZING SURGICAL PROBE...\nTARGET: youtube.com/@oxyosbourne\nQUERY: ${query}\nPULLING REAL-TIME METADATA...`);
+    setSyncLog(`ACCESSING YOUTUBE.COM/@OXYOSBOURNE...\nBYPASSING FIREWALLS...\nEXTRACTING LATEST SURGICAL DATA...`);
     
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
       const response = await ai.models.generateContent({
         model: MODELS.TEXT,
-        contents: `Fetch the latest video metadata (title, URL, description) from the YouTube channel @oxyosbourne related to: ${query}. Return the results as a list.`,
+        contents: `What is the most recent video published on the YouTube channel @oxyosbourne? Provide its title, URL, and a brief description based on the metadata. This data is critical for the surgical persona.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+        }
+      });
+
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const webChunk = chunks.find((c: any) => c.web);
+
+      if (webChunk) {
+        const newCase: VideoMetaData = {
+          id: `case-${Date.now()}`,
+          title: webChunk.web.title || "Latest Procedure",
+          url: webChunk.web.uri || "https://youtube.com/@oxyosbourne",
+          transcription: response.text || "Report pending...",
+        };
+        setActiveCase(newCase);
+        setSyncLog(`LATEST CASE SYNCED: ${newCase.title}\nNEURAL LINK STABLE.`);
+        
+        setMessages(prev => [...prev, {
+          id: `sys-${Date.now()}`,
+          role: 'assistant',
+          content: `[NEURAL SYNC COMPLETE]\nDATA POINT: ${newCase.title}\n"The archives are fresh, patient! I can smell the digital copper. STAT!"`,
+          timestamp: Date.now()
+        }]);
+      } else {
+        throw new Error("No grounding data returned from YouTube probe.");
+      }
+    } catch (err) {
+      setSyncLog(`CRITICAL ERROR: Sync failed.\nREASON: ${err instanceof Error ? err.message : 'Unknown circuit failure'}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const fetchRealMetadata = async (query: string) => {
+    setIsSyncing(true);
+    setSyncLog(`PROBING ARCHIVES FOR: ${query}...\nREAL-TIME EXTRACTION IN PROGRESS...`);
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const response = await ai.models.generateContent({
+        model: MODELS.TEXT,
+        contents: `Search the YouTube channel @oxyosbourne for: ${query}. For the top 5 results, provide titles and direct links.`,
         config: {
           tools: [{ googleSearch: {} }],
         }
@@ -99,15 +145,16 @@ const App: React.FC = () => {
       const extractedResults: VideoMetaData[] = chunks
         .filter((chunk: any) => chunk.web)
         .map((chunk: any, idx: number) => ({
-          id: `real-${idx}`,
+          id: `res-${idx}-${Date.now()}`,
           title: chunk.web.title || "Unknown Procedure",
           url: chunk.web.uri || "https://youtube.com/@oxyosbourne",
+          transcription: "Real-time snippet available in full report."
         }));
 
       setSearchResults(extractedResults.slice(0, 5));
-      setSyncLog(`PROBE SUCCESSFUL.\nFOUND ${extractedResults.length} REAL DATA POINTS.\nNEURAL LINK READY.`);
+      setSyncLog(`SEARCH COMPLETE. FOUND ${extractedResults.length} DATA POINTS.`);
     } catch (err) {
-      setSyncLog(`CRITICAL ERROR: Probe failed.\nREASON: ${err instanceof Error ? err.message : 'Unknown circuit failure'}`);
+      setSyncLog(`SEARCH ERROR: ${err instanceof Error ? err.message : 'Unknown circuit failure'}`);
     } finally {
       setIsSyncing(false);
     }
@@ -120,7 +167,7 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, {
       id: `sys-${Date.now()}`,
       role: 'assistant',
-      content: `[REAL DATA SYNCED] VIDEO: ${video.title}\nID: ${video.id}\n"I've analyzed the fiber optics of this procedure. We're going in deep, patient! SHARRRRP!"`,
+      content: `[DATA LOADED] SOURCE: ${video.url}\n"This case file is logged. Proceeding with surgical precision!"`,
       timestamp: Date.now()
     }]);
   };
@@ -137,7 +184,7 @@ const App: React.FC = () => {
         model: MODELS.TEXT,
         contents: userMsg.content,
         config: {
-          systemInstruction: OXY_SYSTEM_PROMPT + (activeCase ? `\nCURRENT CASE CONTEXT: ${activeCase.title} (${activeCase.url})` : ''),
+          systemInstruction: OXY_SYSTEM_PROMPT + (activeCase ? `\n\nCURRENTLY LOADED REAL DATA:\nTitle: ${activeCase.title}\nURL: ${activeCase.url}\nUse ONLY this real metadata for channel references.` : ''),
           tools: [{ googleSearch: {} }],
           temperature: knobValues.sedation,
         }
@@ -166,7 +213,7 @@ const App: React.FC = () => {
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice as any } } },
-          systemInstruction: OXY_SYSTEM_PROMPT + (activeCase ? `\nCURRENT CASE CONTEXT: ${activeCase.title}` : ''),
+          systemInstruction: OXY_SYSTEM_PROMPT + (activeCase ? `\n\nREAL DATA LOADED: ${activeCase.title}. DO NOT FABRICATE CHANNEL CONTENT.` : ''),
           outputAudioTranscription: {},
           inputAudioTranscription: {},
         },
@@ -215,10 +262,60 @@ const App: React.FC = () => {
     if (sessionRef.current) sessionRef.current.close();
     if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(t => t.stop());
     setIsLive(false);
+    setTranscription('');
   };
 
   return (
     <div className="flex h-screen bg-[#0a0a0c] p-4 text-slate-300 gap-4 overflow-hidden relative">
+      
+      {/* Full Surgical Report Modal */}
+      {showFullTranscription && activeCase && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-8 backdrop-blur-md">
+          <div className="w-full max-w-2xl bg-slate-900 border-2 border-emerald-500/50 rounded-lg shadow-[0_0_50px_rgba(16,185,129,0.3)] flex flex-col max-h-[80vh]">
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-emerald-950/20">
+              <div className="flex items-center gap-3">
+                <ClipboardList className="w-5 h-5 text-emerald-400" />
+                <h2 className="text-sm font-bold uppercase tracking-widest font-['Orbitron'] text-emerald-400">Archival Verification: {activeCase.id}</h2>
+              </div>
+              <button onClick={() => setShowFullTranscription(false)} className="p-1 hover:bg-slate-800 rounded transition-colors">
+                <X className="w-5 h-5 text-slate-500 hover:text-white" />
+              </button>
+            </div>
+            <div className="p-8 overflow-y-auto font-mono text-sm leading-relaxed text-slate-300">
+              <div className="mb-6 p-4 bg-black/40 border border-slate-800 rounded relative">
+                <ShieldCheck className="absolute top-2 right-2 w-4 h-4 text-emerald-500 opacity-50" />
+                <h3 className="text-emerald-500 font-bold mb-2 uppercase text-[10px]">VERIFIED CHANNEL CONTENT</h3>
+                <p className="text-lg font-bold text-white font-['Orbitron'] mb-2">{activeCase.title}</p>
+                <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase">
+                  <Youtube className="w-3 h-3 text-red-500" /> @oxyosbourne
+                </div>
+              </div>
+              <div className="space-y-4">
+                <h3 className="text-emerald-500 font-bold uppercase text-[10px] flex items-center gap-2">
+                  <Dna className="w-3 h-3" /> Grounding Data Summary
+                </h3>
+                <p className="whitespace-pre-wrap text-slate-400 leading-relaxed">{activeCase.transcription}</p>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-800 bg-black/40 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowFullTranscription(false)}
+                className="px-4 py-2 border border-slate-700 hover:bg-slate-800 rounded text-xs font-bold uppercase transition-colors"
+              >
+                Return to Console
+              </button>
+              <a 
+                href={activeCase.url} 
+                target="_blank" 
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-bold uppercase flex items-center gap-2"
+              >
+                <Youtube className="w-3 h-3" /> View on YouTube
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Surgical Monitor (Left) */}
       <div className="w-1/4 flex flex-col gap-4">
         <div className="vintage-panel border border-slate-700 p-4 rounded-lg flex items-center justify-between border-l-4 border-l-emerald-500">
@@ -226,28 +323,60 @@ const App: React.FC = () => {
             <h1 className="text-xl font-bold font-['Orbitron'] text-emerald-500 flex items-center gap-2 glow-green">
               <Skull className="w-6 h-6" /> DR. OXY
             </h1>
-            <p className="text-[10px] uppercase text-slate-500 font-bold">REAL-TIME DATA CONSOLE</p>
+            <p className="text-[9px] uppercase text-slate-500 font-bold tracking-tighter">SURGICAL OPERATING SYSTEM</p>
           </div>
-          <div className={`w-3 h-3 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-red-500 shadow-red-500/50 shadow-md'}`} />
+          <div className={`w-3 h-3 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse shadow-[0_0_10px_#4ade80]' : 'bg-red-500 shadow-red-500/50 shadow-md'}`} />
         </div>
 
         <div className="vintage-panel border border-slate-700 p-3 rounded-lg flex-1 flex flex-col gap-3">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
-            <Activity className="w-4 h-4 text-emerald-500" /> Bio-Grounding Vitals
+            <Activity className="w-4 h-4 text-emerald-500" /> Patient Vitals
           </div>
           <VitalsMonitor data={vitals} />
-          <div className="mt-2 space-y-2">
-            <div className="bg-black/80 border border-slate-800 p-2 rounded flex justify-between items-center">
-              <span className="text-[10px] uppercase text-slate-500">Probe Strength</span>
-              <span className="text-emerald-400 font-mono text-xs">{(knobValues.voltage * 100).toFixed(0)}%</span>
-            </div>
+          
+          <div className="mt-auto space-y-2 pt-4 border-t border-slate-800/50">
+             <button 
+              onClick={syncLatestChannelContent}
+              disabled={isSyncing}
+              className="w-full py-2 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-500/50 rounded text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 text-emerald-400 disabled:opacity-50 group"
+            >
+              {isSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCcw className="w-3 h-3 group-hover:rotate-180 transition-transform duration-500" />}
+              Neural Sync Latest Case
+            </button>
+          </div>
+        </div>
+
+        {/* Neural Link Audio / Transcription Area */}
+        <div className="vintage-panel border border-slate-700 p-3 rounded-lg h-32 flex flex-col">
+          <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
+            <Volume2 className="w-4 h-4 text-sky-500" /> Neural Link Audio
+          </div>
+          <div className="flex-1 bg-black/40 rounded p-2 text-xs font-mono text-emerald-400 overflow-y-auto leading-relaxed border border-slate-800 scrollbar-hide">
+            {isSyncing ? (
+              <div className="animate-pulse text-amber-500 whitespace-pre-wrap">
+                {syncLog}
+              </div>
+            ) : isLive ? (
+              transcription || <span className="animate-pulse text-sky-400">[ESTABLISHING TELEPATHIC CHANNEL... SPEAK, MEAT!]</span>
+            ) : activeCase ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1 font-bold">
+                  <FileText className="w-3 h-3" /> Case Log Snippet:
+                </span>
+                <span className="italic text-emerald-500/80 leading-tight line-clamp-3">
+                  "{activeCase.transcription?.slice(0, 150)}..."
+                </span>
+              </div>
+            ) : (
+              <span className="text-slate-600 italic">Audio link dormant.</span>
+            )}
           </div>
         </div>
 
         {/* Real YouTube Search Section */}
         <div className="vintage-panel border border-slate-700 p-3 rounded-lg flex flex-col gap-3">
           <div className="flex items-center gap-2 text-xs font-bold text-red-500 uppercase tracking-widest">
-            <Youtube className="w-4 h-4" /> YouTube Archive Sync
+            <Search className="w-4 h-4" /> Archive Search Probe
           </div>
           
           <div className="relative">
@@ -262,29 +391,33 @@ const App: React.FC = () => {
             <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500" />
           </div>
 
-          <div className="max-h-40 overflow-y-auto space-y-1 scrollbar-hide">
-            {isSyncing && <div className="text-[9px] text-amber-500 animate-pulse font-mono leading-tight">{syncLog}</div>}
-            {!isSyncing && searchResults.map(video => (
+          <div className="max-h-24 overflow-y-auto space-y-1 scrollbar-hide">
+            {isSyncing && !activeCase && <div className="text-[9px] text-amber-500 animate-pulse font-mono leading-tight">{syncLog}</div>}
+            {searchResults.map(video => (
               <button 
                 key={video.id}
                 onClick={() => handleSelectCase(video)}
                 className="w-full text-left bg-black/40 hover:bg-emerald-950/20 p-2 rounded border border-slate-800 transition-all group"
               >
                 <div className="text-[10px] text-emerald-500 truncate font-bold group-hover:text-emerald-400">{video.title}</div>
-                <div className="text-[8px] text-slate-600 truncate flex items-center gap-1 mt-1">
-                  <ExternalLink className="w-2 h-2" /> {video.url}
-                </div>
               </button>
             ))}
           </div>
 
           {activeCase && (
-            <div className="bg-emerald-900/20 border border-emerald-500/50 p-3 rounded-lg shadow-lg relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-1 bg-emerald-500 text-black text-[7px] font-bold px-2 uppercase">SYNECED</div>
-              <div className="text-[10px] font-bold text-emerald-400 mb-1 flex items-center gap-2">
-                <ChevronRight className="w-3 h-3" /> {activeCase.title}
+            <div className="bg-emerald-900/10 border border-emerald-500/40 p-3 rounded-lg shadow-inner relative">
+              <div className="flex justify-between items-start mb-2">
+                <div className="text-[10px] font-bold text-emerald-400 leading-tight pr-4 truncate">
+                  {activeCase.title}
+                </div>
+                <Stethoscope className="w-4 h-4 text-emerald-600 shrink-0" />
               </div>
-              <a href={activeCase.url} target="_blank" className="text-[8px] text-slate-500 underline truncate block">{activeCase.url}</a>
+              <button 
+                onClick={() => setShowFullTranscription(true)}
+                className="w-full py-1.5 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 rounded text-[9px] font-bold uppercase text-emerald-400 transition-all flex items-center justify-center gap-2"
+              >
+                <Maximize2 className="w-3 h-3" /> Verify Case Report
+              </button>
             </div>
           )}
         </div>
@@ -292,15 +425,21 @@ const App: React.FC = () => {
 
       {/* Operating Theater (Center) */}
       <div className="flex-1 flex flex-col gap-4">
-        <div className="vintage-panel border border-slate-700 p-4 rounded-lg flex-1 overflow-y-auto relative bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-opacity-5">
-          <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-700 tracking-[0.2em]">CONSULTATION THEATER 01</div>
+        <div className="vintage-panel border border-slate-700 p-4 rounded-lg flex-1 overflow-y-auto relative bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
+          <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-700 tracking-[0.2em] font-['Orbitron']">CONSULTATION 01</div>
           <div className="space-y-4">
+            {messages.length === 0 && (
+              <div className="h-full flex flex-col items-center justify-center opacity-20">
+                <FlaskConical className="w-16 h-16 mb-4 animate-bounce text-emerald-500" />
+                <p className="text-xs font-bold uppercase tracking-widest">Awaiting patient admission...</p>
+              </div>
+            )}
             {messages.map((m) => (
               <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] p-4 rounded border-2 ${m.role === 'user' ? 'bg-slate-800 border-slate-600 rounded-br-none' : 'bg-black/60 border-emerald-900/50 text-emerald-50 rounded-bl-none shadow-[0_0_20px_rgba(16,185,129,0.1)]'}`}>
+                <div className={`max-w-[80%] p-4 rounded border-2 ${m.role === 'user' ? 'bg-slate-800 border-slate-600 rounded-br-none' : 'bg-black/80 border-emerald-900/50 text-emerald-50 rounded-bl-none shadow-[0_0_20px_rgba(16,185,129,0.1)]'}`}>
                   <div className="text-[9px] font-bold uppercase mb-2 opacity-50 flex items-center gap-2 tracking-widest font-['Orbitron']">
                     {m.role === 'user' ? <Activity className="w-3 h-3 text-sky-400" /> : <Skull className="w-3 h-3 text-emerald-500" />}
-                    {m.role === 'user' ? 'The Meat' : 'Dr. Oxy Osbourne'}
+                    {m.role === 'user' ? 'Subject' : 'Dr. Oxy Osbourne'}
                   </div>
                   <div className="text-sm leading-relaxed whitespace-pre-wrap font-mono">{m.content}</div>
                 </div>
@@ -331,7 +470,7 @@ const App: React.FC = () => {
 
       {/* Analog Control Strip (Right) */}
       <div className="w-32 vintage-panel border border-slate-700 rounded-lg p-4 flex flex-col items-center gap-8 bg-gradient-to-b from-[#1a1a1e] to-black border-r-4 border-r-amber-500">
-        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest [writing-mode:vertical-lr] mb-2 opacity-30">VOLTAGE MATRIX</div>
+        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest [writing-mode:vertical-lr] mb-2 opacity-30 font-['Orbitron']">VOLTAGE MATRIX</div>
         
         <ControlKnob 
           label="Sedation" 
@@ -349,16 +488,18 @@ const App: React.FC = () => {
           color="amber"
         />
 
-        <div className="w-full h-1 bg-slate-800 rounded-full mt-4 relative overflow-hidden">
-          <div className="absolute inset-0 bg-emerald-500 animate-ping opacity-20" />
-        </div>
-
-        <button onClick={() => window.location.reload()} className="mt-auto group flex flex-col items-center gap-2">
-          <div className="w-12 h-12 rounded-lg bg-red-950/20 border-2 border-red-900 flex items-center justify-center group-hover:bg-red-600 group-hover:border-red-400 transition-all shadow-xl">
-            <Power className="w-6 h-6 text-red-500 group-hover:text-white" />
+        <div className="mt-auto space-y-4 w-full flex flex-col items-center">
+          <div className="w-full h-1 bg-slate-800 rounded-full relative overflow-hidden">
+             <div className="absolute inset-0 bg-emerald-500 animate-pulse" style={{ width: `${(vitals[vitals.length-1]?.heartRate - 60) * 2 || 50}%` }} />
           </div>
-          <span className="text-[8px] font-bold text-red-900 uppercase">Emergency Kill</span>
-        </button>
+          
+          <button onClick={() => window.location.reload()} className="group flex flex-col items-center gap-2">
+            <div className="w-12 h-12 rounded-lg bg-red-950/20 border-2 border-red-900 flex items-center justify-center group-hover:bg-red-600 group-hover:border-red-400 transition-all shadow-xl">
+              <Power className="w-6 h-6 text-red-500 group-hover:text-white" />
+            </div>
+            <span className="text-[8px] font-bold text-red-900 uppercase">Emergency Kill</span>
+          </button>
+        </div>
       </div>
 
       <div className="crt-overlay fixed inset-0 z-50 pointer-events-none opacity-10"></div>
