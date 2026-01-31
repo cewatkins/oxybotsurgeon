@@ -27,7 +27,9 @@ import {
   Stethoscope,
   RefreshCcw,
   ShieldCheck,
-  FileText
+  FileText,
+  ScanSearch,
+  Database
 } from 'lucide-react';
 import VitalsMonitor from './components/VitalsMonitor';
 import ControlKnob from './components/ControlKnob';
@@ -84,6 +86,40 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [knobValues.sedation]);
 
+  const fetchRealMetadata = async (query: string) => {
+    if (!query.trim()) return;
+    setIsSyncing(true);
+    setSyncLog(`SCANNING @OXYOSBOURNE ARCHIVES FOR: "${query}"...\nINITIATING GROUNDED PROBE...`);
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const response = await ai.models.generateContent({
+        model: MODELS.TEXT,
+        contents: `Locate the most relevant videos from the YouTube channel @oxyosbourne regarding: "${query}". Return the top 5 video titles and their direct URLs. For each, include a one-sentence surgical summary.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+        }
+      });
+
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const extractedResults: VideoMetaData[] = chunks
+        .filter((chunk: any) => chunk.web)
+        .map((chunk: any, idx: number) => ({
+          id: `res-${idx}-${Date.now()}`,
+          title: chunk.web.title || "Archive Fragment",
+          url: chunk.web.uri || "https://youtube.com/@oxyosbourne",
+          transcription: response.text || "Analysis in progress..."
+        }));
+
+      setSearchResults(extractedResults.slice(0, 5));
+      setSyncLog(`SCAN SUCCESSFUL.\nFOUND ${extractedResults.length} CASE FRAGMENTS.\nNEURAL SYNC READY.`);
+    } catch (err) {
+      setSyncLog(`SCAN FAILURE: Grounding probe lost.\nREASON: ${err instanceof Error ? err.message : 'Unknown server disconnect'}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const syncLatestChannelContent = async () => {
     setIsSyncing(true);
     setSyncLog(`ACCESSING YOUTUBE.COM/@OXYOSBOURNE...\nBYPASSING FIREWALLS...\nEXTRACTING LATEST SURGICAL DATA...`);
@@ -127,39 +163,6 @@ const App: React.FC = () => {
     }
   };
 
-  const fetchRealMetadata = async (query: string) => {
-    setIsSyncing(true);
-    setSyncLog(`PROBING ARCHIVES FOR: ${query}...\nREAL-TIME EXTRACTION IN PROGRESS...`);
-    
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-      const response = await ai.models.generateContent({
-        model: MODELS.TEXT,
-        contents: `Search the YouTube channel @oxyosbourne for: ${query}. For the top 5 results, provide titles and direct links.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-        }
-      });
-
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const extractedResults: VideoMetaData[] = chunks
-        .filter((chunk: any) => chunk.web)
-        .map((chunk: any, idx: number) => ({
-          id: `res-${idx}-${Date.now()}`,
-          title: chunk.web.title || "Unknown Procedure",
-          url: chunk.web.uri || "https://youtube.com/@oxyosbourne",
-          transcription: "Real-time snippet available in full report."
-        }));
-
-      setSearchResults(extractedResults.slice(0, 5));
-      setSyncLog(`SEARCH COMPLETE. FOUND ${extractedResults.length} DATA POINTS.`);
-    } catch (err) {
-      setSyncLog(`SEARCH ERROR: ${err instanceof Error ? err.message : 'Unknown circuit failure'}`);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const handleSelectCase = (video: VideoMetaData) => {
     setActiveCase(video);
     setSearchResults([]);
@@ -167,7 +170,7 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, {
       id: `sys-${Date.now()}`,
       role: 'assistant',
-      content: `[DATA LOADED] SOURCE: ${video.url}\n"This case file is logged. Proceeding with surgical precision!"`,
+      content: `[DATA MOUNTED] SOURCE: ${video.url}\n"This procedure is now active in my memory bank. I'm ready to operate, meat!"`,
       timestamp: Date.now()
     }]);
   };
@@ -275,7 +278,7 @@ const App: React.FC = () => {
             <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-emerald-950/20">
               <div className="flex items-center gap-3">
                 <ClipboardList className="w-5 h-5 text-emerald-400" />
-                <h2 className="text-sm font-bold uppercase tracking-widest font-['Orbitron'] text-emerald-400">Archival Verification: {activeCase.id}</h2>
+                <h2 className="text-sm font-bold uppercase tracking-widest font-['Orbitron'] text-emerald-400">Archive Verification: {activeCase.id}</h2>
               </div>
               <button onClick={() => setShowFullTranscription(false)} className="p-1 hover:bg-slate-800 rounded transition-colors">
                 <X className="w-5 h-5 text-slate-500 hover:text-white" />
@@ -316,8 +319,9 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Surgical Monitor (Left) */}
+      {/* Surgical Monitor (Left Column) */}
       <div className="w-1/4 flex flex-col gap-4">
+        {/* Main Title Panel */}
         <div className="vintage-panel border border-slate-700 p-4 rounded-lg flex items-center justify-between border-l-4 border-l-emerald-500">
           <div>
             <h1 className="text-xl font-bold font-['Orbitron'] text-emerald-500 flex items-center gap-2 glow-green">
@@ -328,6 +332,42 @@ const App: React.FC = () => {
           <div className={`w-3 h-3 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse shadow-[0_0_10px_#4ade80]' : 'bg-red-500 shadow-red-500/50 shadow-md'}`} />
         </div>
 
+        {/* Global Archive Search (Sits at top of side column) */}
+        <div className="vintage-panel border border-slate-700 p-3 rounded-lg flex flex-col gap-3 border-t-4 border-t-sky-500 bg-sky-950/5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-bold text-sky-400 uppercase tracking-widest">
+              <ScanSearch className="w-4 h-4" /> Global Archive Search
+            </div>
+            <Database className="w-3 h-3 text-slate-700" />
+          </div>
+          <div className="relative">
+            <input 
+              type="text" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && fetchRealMetadata(searchQuery)}
+              placeholder="Search Case Records..."
+              className="w-full bg-black/60 border border-slate-800 rounded pl-8 pr-2 py-2 text-[10px] focus:outline-none focus:border-sky-500 transition-colors font-mono"
+            />
+            <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500" />
+          </div>
+          {searchResults.length > 0 && (
+            <div className="max-h-32 overflow-y-auto space-y-1 scrollbar-hide">
+               {searchResults.map(video => (
+                <button 
+                  key={video.id}
+                  onClick={() => handleSelectCase(video)}
+                  className="w-full text-left bg-black/40 hover:bg-sky-950/20 p-2 rounded border border-slate-800 transition-all group flex items-start gap-2"
+                >
+                  <ChevronRight className="w-3 h-3 text-sky-600 shrink-0 mt-0.5" />
+                  <div className="text-[9px] text-sky-400 truncate font-mono group-hover:text-sky-300">{video.title}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Vitals Monitor */}
         <div className="vintage-panel border border-slate-700 p-3 rounded-lg flex-1 flex flex-col gap-3">
           <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
             <Activity className="w-4 h-4 text-emerald-500" /> Patient Vitals
@@ -346,84 +386,41 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Neural Link Audio / Transcription Area */}
-        <div className="vintage-panel border border-slate-700 p-3 rounded-lg h-32 flex flex-col">
-          <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-400 uppercase tracking-widest">
-            <Volume2 className="w-4 h-4 text-sky-500" /> Neural Link Audio
+        {/* Neural Link Audio / Active Case Info */}
+        <div className="vintage-panel border border-slate-700 p-3 rounded-lg flex flex-col gap-3 bg-emerald-950/5">
+          <div className="flex items-center gap-2 text-xs font-bold text-sky-500 uppercase tracking-widest">
+            <Volume2 className="w-4 h-4" /> Neural Link Audio
           </div>
-          <div className="flex-1 bg-black/40 rounded p-2 text-xs font-mono text-emerald-400 overflow-y-auto leading-relaxed border border-slate-800 scrollbar-hide">
+          <div className="h-24 bg-black/40 rounded p-2 text-xs font-mono text-emerald-400 overflow-y-auto leading-relaxed border border-slate-800 scrollbar-hide">
             {isSyncing ? (
               <div className="animate-pulse text-amber-500 whitespace-pre-wrap">
                 {syncLog}
               </div>
             ) : isLive ? (
-              transcription || <span className="animate-pulse text-sky-400">[ESTABLISHING TELEPATHIC CHANNEL... SPEAK, MEAT!]</span>
+              transcription || <span className="animate-pulse text-sky-400">[LISTENING TO PATIENT FREQUENCIES...]</span>
             ) : activeCase ? (
               <div className="flex flex-col gap-1">
                 <span className="text-[9px] text-slate-500 uppercase flex items-center gap-1 font-bold">
-                  <FileText className="w-3 h-3" /> Case Log Snippet:
+                  <FileText className="w-3 h-3" /> Grounded Metadata:
                 </span>
-                <span className="italic text-emerald-500/80 leading-tight line-clamp-3">
-                  "{activeCase.transcription?.slice(0, 150)}..."
+                <span className="italic text-emerald-500/80 leading-tight line-clamp-2">
+                  "{activeCase.transcription?.slice(0, 100)}..."
                 </span>
+                <button 
+                  onClick={() => setShowFullTranscription(true)}
+                  className="mt-1 w-full py-1 bg-emerald-900/40 hover:bg-emerald-900/60 border border-emerald-500/30 rounded text-[8px] font-bold uppercase text-emerald-400 transition-all flex items-center justify-center gap-1"
+                >
+                  <Maximize2 className="w-2.5 h-2.5" /> Open Report
+                </button>
               </div>
             ) : (
-              <span className="text-slate-600 italic">Audio link dormant.</span>
+              <span className="text-slate-600 italic">Audio link dormant. Awaiting case file.</span>
             )}
           </div>
         </div>
-
-        {/* Real YouTube Search Section */}
-        <div className="vintage-panel border border-slate-700 p-3 rounded-lg flex flex-col gap-3">
-          <div className="flex items-center gap-2 text-xs font-bold text-red-500 uppercase tracking-widest">
-            <Search className="w-4 h-4" /> Archive Search Probe
-          </div>
-          
-          <div className="relative">
-            <input 
-              type="text" 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && fetchRealMetadata(searchQuery)}
-              placeholder="Query @oxyosbourne..."
-              className="w-full bg-black/60 border border-slate-800 rounded pl-8 pr-2 py-2 text-[10px] focus:outline-none focus:border-red-500 transition-colors font-mono"
-            />
-            <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500" />
-          </div>
-
-          <div className="max-h-24 overflow-y-auto space-y-1 scrollbar-hide">
-            {isSyncing && !activeCase && <div className="text-[9px] text-amber-500 animate-pulse font-mono leading-tight">{syncLog}</div>}
-            {searchResults.map(video => (
-              <button 
-                key={video.id}
-                onClick={() => handleSelectCase(video)}
-                className="w-full text-left bg-black/40 hover:bg-emerald-950/20 p-2 rounded border border-slate-800 transition-all group"
-              >
-                <div className="text-[10px] text-emerald-500 truncate font-bold group-hover:text-emerald-400">{video.title}</div>
-              </button>
-            ))}
-          </div>
-
-          {activeCase && (
-            <div className="bg-emerald-900/10 border border-emerald-500/40 p-3 rounded-lg shadow-inner relative">
-              <div className="flex justify-between items-start mb-2">
-                <div className="text-[10px] font-bold text-emerald-400 leading-tight pr-4 truncate">
-                  {activeCase.title}
-                </div>
-                <Stethoscope className="w-4 h-4 text-emerald-600 shrink-0" />
-              </div>
-              <button 
-                onClick={() => setShowFullTranscription(true)}
-                className="w-full py-1.5 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 rounded text-[9px] font-bold uppercase text-emerald-400 transition-all flex items-center justify-center gap-2"
-              >
-                <Maximize2 className="w-3 h-3" /> Verify Case Report
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Operating Theater (Center) */}
+      {/* Operating Theater (Center Column) */}
       <div className="flex-1 flex flex-col gap-4">
         <div className="vintage-panel border border-slate-700 p-4 rounded-lg flex-1 overflow-y-auto relative bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
           <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-700 tracking-[0.2em] font-['Orbitron']">CONSULTATION 01</div>
@@ -468,7 +465,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Analog Control Strip (Right) */}
+      {/* Analog Control Strip (Right Column) */}
       <div className="w-32 vintage-panel border border-slate-700 rounded-lg p-4 flex flex-col items-center gap-8 bg-gradient-to-b from-[#1a1a1e] to-black border-r-4 border-r-amber-500">
         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest [writing-mode:vertical-lr] mb-2 opacity-30 font-['Orbitron']">VOLTAGE MATRIX</div>
         
