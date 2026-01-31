@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { 
@@ -84,33 +83,17 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [knobValues.sedation]);
 
+  // Use backend for latest video
   const syncLatestChannelContent = async () => {
     setIsSyncing(true);
     setSyncLog(`ACCESSING YOUTUBE.COM/@OXYOSBOURNE...\nBYPASSING FIREWALLS...\nEXTRACTING LATEST SURGICAL DATA...`);
-    
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-      const response = await ai.models.generateContent({
-        model: MODELS.TEXT,
-        contents: `What is the most recent video published on the YouTube channel @oxyosbourne? Provide its title, URL, and a brief description based on the metadata. This data is critical for the surgical persona.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-        }
-      });
-
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const webChunk = chunks.find((c: any) => c.web);
-
-      if (webChunk) {
-        const newCase: VideoMetaData = {
-          id: `case-${Date.now()}`,
-          title: webChunk.web.title || "Latest Procedure",
-          url: webChunk.web.uri || "https://youtube.com/@oxyosbourne",
-          transcription: response.text || "Report pending...",
-        };
+      const resp = await fetch('http://localhost:8000/videos');
+      const videos: VideoMetaData[] = await resp.json();
+      if (videos.length > 0) {
+        const newCase = videos[0];
         setActiveCase(newCase);
         setSyncLog(`LATEST CASE SYNCED: ${newCase.title}\nNEURAL LINK STABLE.`);
-        
         setMessages(prev => [...prev, {
           id: `sys-${Date.now()}`,
           role: 'assistant',
@@ -118,7 +101,7 @@ const App: React.FC = () => {
           timestamp: Date.now()
         }]);
       } else {
-        throw new Error("No grounding data returned from YouTube probe.");
+        setSyncLog('No videos found in archive.');
       }
     } catch (err) {
       setSyncLog(`CRITICAL ERROR: Sync failed.\nREASON: ${err instanceof Error ? err.message : 'Unknown circuit failure'}`);
@@ -127,37 +110,36 @@ const App: React.FC = () => {
     }
   };
 
+  // Use backend for archive search
   const fetchRealMetadata = async (query: string) => {
     setIsSyncing(true);
     setSyncLog(`PROBING ARCHIVES FOR: ${query}...\nREAL-TIME EXTRACTION IN PROGRESS...`);
-    
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-      const response = await ai.models.generateContent({
-        model: MODELS.TEXT,
-        contents: `Search the YouTube channel @oxyosbourne for: ${query}. For the top 5 results, provide titles and direct links.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-        }
-      });
-
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const extractedResults: VideoMetaData[] = chunks
-        .filter((chunk: any) => chunk.web)
-        .map((chunk: any, idx: number) => ({
-          id: `res-${idx}-${Date.now()}`,
-          title: chunk.web.title || "Unknown Procedure",
-          url: chunk.web.uri || "https://youtube.com/@oxyosbourne",
-          transcription: "Real-time snippet available in full report."
-        }));
-
-      setSearchResults(extractedResults.slice(0, 5));
-      setSyncLog(`SEARCH COMPLETE. FOUND ${extractedResults.length} DATA POINTS.`);
+      const resp = await fetch(`http://localhost:8000/videos?query=${encodeURIComponent(query)}`);
+      const results: VideoMetaData[] = await resp.json();
+      setSearchResults(results.slice(0, 5));
+      setSyncLog(`SEARCH COMPLETE. FOUND ${results.length} DATA POINTS.`);
     } catch (err) {
       setSyncLog(`SEARCH ERROR: ${err instanceof Error ? err.message : 'Unknown circuit failure'}`);
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const fetchBackendVideos = async (query?: string) => {
+    const url = query ? `/videos?query=${encodeURIComponent(query)}` : '/videos';
+    const resp = await fetch(`http://localhost:8000${url}`);
+    return await resp.json();
+  };
+
+  const fetchBackendRandomVideo = async () => {
+    const resp = await fetch('http://localhost:8000/random_video');
+    return await resp.json();
+  };
+
+  const fetchBackendVideo = async (id: string) => {
+    const resp = await fetch(`http://localhost:8000/video/${id}`);
+    return await resp.json();
   };
 
   const handleSelectCase = (video: VideoMetaData) => {
